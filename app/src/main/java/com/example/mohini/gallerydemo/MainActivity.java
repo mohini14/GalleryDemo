@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.media.Image;
 import android.net.Uri;
 import android.os.Build;
@@ -16,18 +17,28 @@ import android.support.annotation.RequiresApi;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v4.content.FileProvider;
+import android.support.v4.widget.ViewDragHelper;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewGroup;
+import android.widget.BaseAdapter;
 import android.widget.Button;
+import android.widget.GridView;
+import android.widget.ImageView;
 import android.widget.Toast;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.FileWriter;
 import java.io.IOException;
+import java.net.URI;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.Random;
 
 import static java.security.AccessController.getContext;
 
@@ -35,14 +46,23 @@ public class MainActivity extends AppCompatActivity {
 
     Button photoButton;
     static final int REQUEST_IMAGE_CAPTURE = 1;
-    private boolean mImageBitmap;
-    private String mCurrentPhotoPath;
+
+    ArrayList<String> f = new ArrayList<String>();// list of file paths
+    File[] listFile;
+    ImageAdapter adapter;
+    GridView imagegrid;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
         photoButton = findViewById(R.id.cameraButton);
+        imagegrid = (GridView) findViewById(R.id.photoGrid);
+        adapter = new ImageAdapter();
+        imagegrid.setAdapter(adapter);
+        getFromSdcard();
+
     }
 
     @RequiresApi(api = Build.VERSION_CODES.M)
@@ -99,77 +119,139 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    public void getCamera(){
+    public void getCamera() {
 
         Intent cameraIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
 
-        if (cameraIntent.resolveActivity(getPackageManager()) != null) {
-            // Create the File where the photo should go
-            File photoFile = null;
+         startActivityForResult(cameraIntent, 1);
+    }
+
+
+
+        private void createDirectoryAndSaveFile(Bitmap imageToSave) {
+
+            String root = Environment.getExternalStorageDirectory().toString();
+            File myDir = new File(root + "/MyGallery");
+
+            if(!myDir.exists())
+            myDir.mkdirs();
+
+            Random generator = new Random();
+            int n = 10000;
+            n = generator.nextInt(n);
+
+            String fname = "Image-"+ n +".jpg";
+            File file = new File (myDir, fname);
+
+            if (file.exists ())
+                file.delete ();
+
             try {
-                photoFile = createImageFile();
-            } catch (IOException ex) {
-                // Error occurred while creating the File
-                Log.i("Error", "IOException");
-            }
-            // Continue only if the File was successfully created
-            if (photoFile != null) {
-                Uri photoURI = FileProvider.getUriForFile(this,
-                        "com.example.android.fileprovider",
-                        photoFile);
-                cameraIntent.putExtra(MediaStore.EXTRA_OUTPUT, photoURI);
-                startActivityForResult(cameraIntent, 1);
+                FileOutputStream out = new FileOutputStream(file);
+                imageToSave.compress(Bitmap.CompressFormat.JPEG, 90, out);
+                out.flush();
+                out.close();
+
+            } catch (Exception e) {
+                e.printStackTrace();
             }
         }
-    }
-
-
-//    public void savePhoto(String fileName, Bitmap img){
-//
-//        FileOutputStream outputStream = null;
-//        try {
-//            outputStream = openFileOutput(fileName, Context.MODE_PRIVATE);
-//            outputStream.write(img.getByteCount());
-//            outputStream.close();
-//        } catch (Exception e) {
-//            e.printStackTrace();
-//        }
-//
-//
-//    }
-    private File createImageFile() throws IOException {
-        // Create an image file name
-        String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
-        String imageFileName = "JPEG" + timeStamp + "_";
-
-        File storageDir = Environment.getExternalStoragePublicDirectory(
-                Environment.DIRECTORY_PICTURES);
-        File image = File.createTempFile(
-                imageFileName,  // prefix
-                ".jpg",         // suffix
-                storageDir      // directory
-        );
-
-        // Save a file: path for use with ACTION_VIEW intents
-        mCurrentPhotoPath = "file:" + image.getAbsolutePath();
-        return image;
-    }
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
 
         if (requestCode == REQUEST_IMAGE_CAPTURE && resultCode == RESULT_OK) {
             try {
-                FileOutputStream fOut = new FileOutputStream(mCurrentPhotoPath);
 
-                mImageBitmap = MediaStore.Images.Media.getBitmap(this.getContentResolver(), Uri.parse(mCurrentPhotoPath)).compress(Bitmap.CompressFormat.JPEG, 85, fOut);
+                Bitmap photo = (Bitmap) data.getExtras().get("data");
 
-                fOut.flush();
-                fOut.close();
-            } catch (IOException e) {
+                createDirectoryAndSaveFile(photo);
+                getFromSdcard();
+                adapter.notifyDataSetChanged();
+                imagegrid.invalidateViews();
+                imagegrid.setAdapter(adapter);
+
+            } catch (Exception e) {
                 e.printStackTrace();
             }
         }
     }
-}
+
+
+
+
+        public void getFromSdcard()
+        {
+            File file= new File(android.os.Environment.getExternalStorageDirectory(),"MyGallery");
+
+            f.clear();
+            if (file.isDirectory())
+            {
+                listFile = file.listFiles();
+
+
+                for (int i = 0; i < listFile.length; i++)
+                {
+
+                    f.add(listFile[i].getAbsolutePath());
+
+                }
+            }
+        }
+
+        public class ImageAdapter extends BaseAdapter {
+
+            private LayoutInflater mInflator;
+
+            public ImageAdapter() {
+
+            }
+
+            @Override
+            public int getCount() {
+                return f.size();
+            }
+
+            @Override
+            public Object getItem(int position) {
+                return f.get(position);
+            }
+
+            @Override
+            public long getItemId(int position) {
+                return 0;
+            }
+
+            @Override
+            public View getView(int position, View convertView, ViewGroup parent) {
+
+                ViewHolder holder;
+
+                if (convertView == null) {
+
+                    holder = new ViewHolder();
+                    mInflator = (LayoutInflater)getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+                    convertView = mInflator.inflate(R.layout.grid_view_cell, null);
+
+                    holder.imageview = (ImageView) convertView.findViewById(R.id.gridView);
+                    convertView.setTag(holder);
+
+                } else {
+
+                    holder = (ViewHolder) convertView.getTag();
+
+                }
+                Bitmap myBitmap = BitmapFactory.decodeFile(f.get(position));
+                holder.imageview.setImageBitmap(myBitmap);
+                return convertView;
+            }
+        }
+
+        class ViewHolder{
+
+            ImageView imageview;
+
+        }
+    }
+
 
